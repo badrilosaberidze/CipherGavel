@@ -7,10 +7,10 @@
     "npm": ">=7.0.0"
   },
   "license": "BSD-3-Clause-Clear",
-  "homepage": "https://github.com/badrilosaberidze/CypherGavel",
+  "homepage": "https://github.com/badrilosaberidze/CipherGavel",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/badrilosaberidze/CypherGavel.git"
+    "url": "git+https://github.com/badrilosaberidze/CipherGavel.git"
   },
   "keywords": [
     "fhevm",
