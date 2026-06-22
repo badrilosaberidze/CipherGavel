@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { FHE, euint64, externalEuint64 } from "@fhevm/solidity/lib/FHE.sol";
+import { FHE, euint64, euint32, externalEuint64, ebool } from "@fhevm/solidity/lib/FHE.sol";
 import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 contract CipherGavel is ZamaEthereumConfig  {
@@ -26,8 +26,14 @@ contract CipherGavel is ZamaEthereumConfig  {
     euint64 private _reserve;   // sellers secret reserved price
     bool public reserveSet;
 
+    // Encrypted results, produced by closeAuction()
+    euint32 private _winnerIndexEnc;
+    euint64 private _clearingPriceEnc;
+    euint32 private _reserveMetEnc; // 1 if highest bid >= reserve, else 0
+
     event BidPlaced(address indexed bidder, uint256 indexed index);
     event ReserveSet(address indexed seller);
+    event AuctionClosed(uint256 bidCount);
 
     modifier onlySeller() {
         require(msg.sender == seller, "Only seller");
@@ -75,6 +81,57 @@ contract CipherGavel is ZamaEthereumConfig  {
 
         emit BidPlaced(msg.sender, _bids.length - 1);
     }
+
+    /// Anyone can close after the deadline; the seller may also close early.
+    /// Computes the winner, the second-highest price, and the reserve check —
+    /// entirely on the ENCRYPTED bids.
+    function closeAuction() external {
+        require(phase == Phase.Bidding, "Not bidding");
+        require(block.timestamp >= biddingDeadline || msg.sender == seller, "Too early");
+        require(_bids.length > 0, "No bids");
+
+        euint64 highest = FHE.asEuint64(0);
+        euint64 second  = FHE.asEuint64(0);
+        euint32 winIdx  = FHE.asEuint32(0);
+
+        for (uint256 i = 0; i < _bids.length; i++) {
+            euint64 b = _bids[i].amount;
+
+            ebool isHigher = FHE.gt(b, highest);
+
+            euint64 contender = FHE.max(second, b);
+            second  = FHE.select(isHigher, highest, contender);
+            highest = FHE.select(isHigher, b, highest);
+            winIdx  = FHE.select(isHigher, FHE.asEuint32(uint32(i)), winIdx);
+        }
+
+        ebool met = FHE.ge(highest, _reserve);
+
+        euint64 priceIfMet = FHE.max(second, _reserve);
+        euint64 price   = FHE.select(met, priceIfMet, FHE.asEuint64(0));
+        euint32 metFlag = FHE.select(met, FHE.asEuint32(1), FHE.asEuint32(0));
+
+        _winnerIndexEnc   = winIdx;
+        _clearingPriceEnc = price;
+        _reserveMetEnc    = metFlag;
+
+        FHE.allowThis(_winnerIndexEnc);
+        FHE.allowThis(_clearingPriceEnc);
+        FHE.allowThis(_reserveMetEnc);
+        FHE.allow(_winnerIndexEnc, seller);
+        FHE.allow(_clearingPriceEnc, seller);
+        FHE.allow(_reserveMetEnc, seller);
+        FHE.makePubliclyDecryptable(_winnerIndexEnc);
+        FHE.makePubliclyDecryptable(_clearingPriceEnc);
+        FHE.makePubliclyDecryptable(_reserveMetEnc);
+
+        phase = Phase.Closed;
+        emit AuctionClosed(_bids.length);
+    }
+
+    function getWinnerIndexEnc() external view returns (euint32) { return _winnerIndexEnc; }
+    function getClearingPriceEnc() external view returns (euint64) { return _clearingPriceEnc; }
+    function getReserveMetEnc() external view returns (euint32) { return _reserveMetEnc; }
 
     function bidCount() external view returns (uint256) { return _bids.length; }
     function bidderAt(uint256 i) external view returns (address) { return _bids[i].bidder; }
