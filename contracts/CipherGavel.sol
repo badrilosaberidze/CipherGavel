@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { FHE, euint64, euint32, externalEuint64, ebool } from "@fhevm/solidity/lib/FHE.sol";
-import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import {FHE, euint64, euint32, externalEuint64, ebool} from "@fhevm/solidity/lib/FHE.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract CipherGavel is ZamaEthereumConfig  {
-    enum Phase { Bidding, Closed, Revealed }
+contract CipherGavel is ZamaEthereumConfig {
+    enum Phase {
+        Bidding,
+        Closed,
+        Revealed
+    }
 
     struct Bid {
         address bidder;
@@ -13,9 +17,9 @@ contract CipherGavel is ZamaEthereumConfig  {
     }
 
     address public immutable seller;
-    uint256 public immutable depositWei;      // uniform, refundable anti-grief bond
+    uint256 public immutable depositWei; // uniform, refundable anti-grief bond
     uint256 public immutable biddingDeadline;
-    uint8   public immutable maxBidders;       // cap of bidders
+    uint8 public immutable maxBidders; // cap of bidders
 
     Phase public phase;
 
@@ -23,7 +27,7 @@ contract CipherGavel is ZamaEthereumConfig  {
     mapping(address => bool) public hasBid;
     mapping(address => uint256) public depositOf;
 
-    euint64 private _reserve;   // sellers secret reserved price
+    euint64 private _reserve; // sellers secret reserved price
     bool public reserveSet;
 
     // Encrypted results, produced by closeAuction()
@@ -72,10 +76,10 @@ contract CipherGavel is ZamaEthereumConfig  {
         require(_bids.length < maxBidders, "Auction full");
 
         euint64 amount = FHE.fromExternal(encBid, inputProof); // verify + import
-        FHE.allowThis(amount);          // the CONTRACT may compute on it later
-        FHE.allow(amount, msg.sender);  // the BIDDER may decrypt their own bid — nobody else
+        FHE.allowThis(amount); // the CONTRACT may compute on it later
+        FHE.allow(amount, msg.sender); // the BIDDER may decrypt their own bid — nobody else
 
-        _bids.push(Bid({ bidder: msg.sender, amount: amount }));
+        _bids.push(Bid({bidder: msg.sender, amount: amount}));
         hasBid[msg.sender] = true;
         depositOf[msg.sender] = msg.value;
 
@@ -91,8 +95,8 @@ contract CipherGavel is ZamaEthereumConfig  {
         require(_bids.length > 0, "No bids");
 
         euint64 highest = FHE.asEuint64(0);
-        euint64 second  = FHE.asEuint64(0);
-        euint32 winIdx  = FHE.asEuint32(0);
+        euint64 second = FHE.asEuint64(0);
+        euint32 winIdx = FHE.asEuint32(0);
 
         for (uint256 i = 0; i < _bids.length; i++) {
             euint64 b = _bids[i].amount;
@@ -100,20 +104,20 @@ contract CipherGavel is ZamaEthereumConfig  {
             ebool isHigher = FHE.gt(b, highest);
 
             euint64 contender = FHE.max(second, b);
-            second  = FHE.select(isHigher, highest, contender);
+            second = FHE.select(isHigher, highest, contender);
             highest = FHE.select(isHigher, b, highest);
-            winIdx  = FHE.select(isHigher, FHE.asEuint32(uint32(i)), winIdx);
+            winIdx = FHE.select(isHigher, FHE.asEuint32(uint32(i)), winIdx);
         }
 
         ebool met = FHE.ge(highest, _reserve);
 
         euint64 priceIfMet = FHE.max(second, _reserve);
-        euint64 price   = FHE.select(met, priceIfMet, FHE.asEuint64(0));
+        euint64 price = FHE.select(met, priceIfMet, FHE.asEuint64(0));
         euint32 metFlag = FHE.select(met, FHE.asEuint32(1), FHE.asEuint32(0));
 
-        _winnerIndexEnc   = winIdx;
+        _winnerIndexEnc = winIdx;
         _clearingPriceEnc = price;
-        _reserveMetEnc    = metFlag;
+        _reserveMetEnc = metFlag;
 
         FHE.allowThis(_winnerIndexEnc);
         FHE.allowThis(_clearingPriceEnc);
@@ -129,11 +133,23 @@ contract CipherGavel is ZamaEthereumConfig  {
         emit AuctionClosed(_bids.length);
     }
 
-    function getWinnerIndexEnc() external view returns (euint32) { return _winnerIndexEnc; }
-    function getClearingPriceEnc() external view returns (euint64) { return _clearingPriceEnc; }
-    function getReserveMetEnc() external view returns (euint32) { return _reserveMetEnc; }
+    function getWinnerIndexEnc() external view returns (euint32) {
+        return _winnerIndexEnc;
+    }
+    function getClearingPriceEnc() external view returns (euint64) {
+        return _clearingPriceEnc;
+    }
+    function getReserveMetEnc() external view returns (euint32) {
+        return _reserveMetEnc;
+    }
 
-    function bidCount() external view returns (uint256) { return _bids.length; }
-    function bidderAt(uint256 i) external view returns (address) { return _bids[i].bidder; }
-    function bidAmountAt(uint256 i) external view returns (euint64) { return _bids[i].amount; }
+    function bidCount() external view returns (uint256) {
+        return _bids.length;
+    }
+    function bidderAt(uint256 i) external view returns (address) {
+        return _bids[i].bidder;
+    }
+    function bidAmountAt(uint256 i) external view returns (euint64) {
+        return _bids[i].amount;
+    }
 }
