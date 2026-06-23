@@ -35,9 +35,18 @@ contract CipherGavel is ZamaEthereumConfig {
     euint64 private _clearingPriceEnc;
     euint32 private _reserveMetEnc; // 1 if highest bid >= reserve, else 0
 
+    // Cleartext results, published after off-chain decryption
+    bool    public resultPublished;
+    uint32  public winnerIndex;
+    address public winner;
+    uint64  public clearingPrice;
+    bool    public reserveMet;
+
     event BidPlaced(address indexed bidder, uint256 indexed index);
     event ReserveSet(address indexed seller);
     event AuctionClosed(uint256 bidCount);
+    event ResultPublished(address indexed winner, uint64 clearingPrice, bool reserveMet);
+    event DepositWithdrawn(address indexed bidder, uint256 amount);
 
     modifier onlySeller() {
         require(msg.sender == seller, "Only seller");
@@ -131,6 +140,36 @@ contract CipherGavel is ZamaEthereumConfig {
 
         phase = Phase.Closed;
         emit AuctionClosed(_bids.length);
+    }
+
+    // Seller publishes the decrypted outcome.
+    /// The values are publicly verifiable (anyone can re-decrypt the result handles)
+    /// so a dishonest seller would be caught immediately.
+    function publishResult(uint32 _winnerIndex, uint64 _clearingPrice, bool _reserveMet) external onlySeller {
+        require(phase == Phase.Closed, "Not closed");
+        require(_winnerIndex < _bids.length, "Bad index");
+
+        winnerIndex   = _winnerIndex;
+        clearingPrice = _clearingPrice;
+        reserveMet    = _reserveMet;
+        winner        = _reserveMet ? _bids[_winnerIndex].bidder : address(0);
+        resultPublished = true;
+        phase = Phase.Revealed;
+
+        emit ResultPublished(winner, _clearingPrice, _reserveMet);
+    }
+
+    /// Each bidder reclaims their uniform deposit after the result is revealed.
+    function withdrawDeposit() external {
+        require(phase == Phase.Revealed, "Not revealed");
+        uint256 amt = depositOf[msg.sender];
+        require(amt > 0, "Nothing to withdraw");
+
+        depositOf[msg.sender] = 0;                 
+        (bool ok, ) = msg.sender.call{ value: amt }("");
+        require(ok, "Transfer failed");
+
+        emit DepositWithdrawn(msg.sender, amt);
     }
 
     function getWinnerIndexEnc() external view returns (euint32) {
