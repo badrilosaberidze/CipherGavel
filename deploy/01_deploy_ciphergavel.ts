@@ -7,7 +7,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const { deploy } = hre.deployments;
 
   const depositWei = hre.ethers.parseEther("0.001"); // uniform refundable bond
-  const biddingPeriodSeconds = 300;                  // 5 min (seller can also close early)
+  const biddingPeriodSeconds = 86400;                // 1 day
   const maxBidders = 3;                              // keep small for the live demo
 
   const deployed = await deploy("CipherGavel", {
