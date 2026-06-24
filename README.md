@@ -21,3 +21,5 @@ Scaffolded from [Zama's fhevm-hardhat-template](https://github.com/zama-ai/fhevm
 ## License
 
 BSD-3-Clause-Clear (matching the Zama FHE libraries).
+
+**Live on Sepolia:** [`0x9DC139B8737eFC64e71DE053dE80C37fd7689606`](https://sepolia.etherscan.io/address/0x9DC139B8737eFC64e71DE053dE80C37fd7689606)
