@@ -94,3 +94,24 @@ task("cg:reveal", "Decrypt the results and (optionally) publish them on-chain")
       console.log("Result published. Anyone can independently re-decrypt and verify it.");
     }
   });
+
+task("cg:finalize", "TRUSTLESS reveal: decrypt off-chain, verify on-chain via KMS signatures")
+  .addOptionalParam("account", "signer index (default 0)", "0")
+  .setAction(async (args, hre) => {
+    await hre.fhevm.initializeCLIApi();
+    const { c } = await load(hre, Number(args.account));
+
+    const handles = [
+      await c.getWinnerIndexEnc(),
+      await c.getClearingPriceEnc(),
+      await c.getReserveMetEnc(),
+    ];
+
+    const res: any = await (hre.fhevm as any).publicDecrypt(handles);
+    console.log("decrypted values:", res.clearValues);
+    
+    const tx = await c.finalize(res.abiEncodedClearValues, res.decryptionProof);
+    console.log("finalize tx:", tx.hash);
+    await tx.wait();
+    console.log("Verified on-chain via KMS signatures and settled — zero trust in the seller.");
+  });
