@@ -172,6 +172,38 @@ contract CipherGavel is ZamaEthereumConfig {
         emit DepositWithdrawn(msg.sender, amt);
     }
 
+    /// TRUSTLESS settlement: instead of trusting the seller to report the
+    /// result, the contract VERIFIES a KMS signature proving the cleartexts are
+    /// the genuine decryption of the on-chain result ciphertexts. A lying seller
+    /// becomes impossible, not merely detectable — and anyone may call this.
+    ///
+    /// The (abiEncodedCleartexts, decryptionProof) pair is produced OFF-CHAIN by
+    /// the relayer SDK's publicDecrypt. The handles
+    /// below MUST be in the same order they were decrypted off-chain.
+    function finalize(bytes memory abiEncodedCleartexts, bytes memory decryptionProof) external {
+        require(phase == Phase.Closed, "Not closed");
+
+        bytes32[] memory handles = new bytes32[](3);
+        handles[0] = FHE.toBytes32(_winnerIndexEnc);
+        handles[1] = FHE.toBytes32(_clearingPriceEnc);
+        handles[2] = FHE.toBytes32(_reserveMetEnc);
+
+        // Reverts unless the cleartexts are authentically signed by the KMS for these handles.
+        FHE.checkSignatures(handles, abiEncodedCleartexts, decryptionProof);
+
+        (uint32 wi, uint64 cp, uint32 rm) = abi.decode(abiEncodedCleartexts, (uint32, uint64, uint32));
+        require(wi < _bids.length, "Bad index");
+
+        winnerIndex = wi;
+        clearingPrice = cp;
+        reserveMet = (rm == 1);
+        winner = reserveMet ? _bids[wi].bidder : address(0);
+        resultPublished = true;
+        phase = Phase.Revealed;
+
+        emit ResultPublished(winner, cp, reserveMet);
+    }
+
     function getWinnerIndexEnc() external view returns (euint32) {
         return _winnerIndexEnc;
     }
