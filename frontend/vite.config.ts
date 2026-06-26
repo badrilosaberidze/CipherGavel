@@ -3,12 +3,17 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+  ],
   optimizeDeps: {
-    exclude: ['@zama-fhe/relayer-sdk']
+    exclude: ['@zama-fhe/relayer-sdk'],
   },
   build: {
-    target: 'esnext'
+    target: 'esnext',
+    commonjsOptions: {
+      transformMixedEsModules: true
+    }
   },
   worker: {
     format: 'es'
