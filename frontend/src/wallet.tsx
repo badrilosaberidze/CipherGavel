@@ -134,7 +134,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return;
       }
       const bp = new ethers.BrowserProvider(injected);
-      // Request accounts - this opens MetaMask account selector
+      // Force MetaMask to show the account picker every time, even if a
+      // permission was already granted. Without this, eth_requestAccounts
+      // silently reuses the previously connected account, so "disconnect +
+      // reconnect" can never switch to a different address.
+      try {
+        await bp.send("wallet_requestPermissions", [{ eth_accounts: {} }]);
+      } catch {
+        // User rejected the permission prompt, or the wallet doesn't support
+        // it — fall through to eth_requestAccounts below.
+      }
       await bp.send("eth_requestAccounts", []);
       try {
         await bp.send("wallet_switchEthereumChain", [{ chainId: SEPOLIA_CHAIN_ID }]);
@@ -172,7 +181,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           .then((accs: string[]) => {
             if (accs?.length) {
               setProvider(bp);
-              setAccount(accs[0]);
+              setAccount(ethers.getAddress(accs[0]));
             }
           })
           .catch(() => {});
@@ -186,7 +195,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             // User switched account in MetaMask
             const bp = new ethers.BrowserProvider(injected);
             setProvider(bp);
-            setAccount(accs[0]);
+            setAccount(ethers.getAddress(accs[0]));
             setManuallyDisconnected(false); // Allow auto-reconnect again
           } else {
             // User disconnected in MetaMask

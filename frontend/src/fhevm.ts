@@ -1,91 +1,64 @@
-import { createInstance } from "@zama-fhe/relayer-sdk/web";
+import { initSDK, createInstance, SepoliaConfig } from "@zama-fhe/relayer-sdk/web";
 import type { FhevmInstance } from "@zama-fhe/relayer-sdk/web";
 
-// Singleton instance cache to avoid re-initializing WASM
+// Dedicated read-only Sepolia RPC for the relayer SDK's on-chain config reads.
+// Kept independent of the wallet so a wrong-network wallet can't break encryption.
+const SEPOLIA_RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+
+// Singleton caches so we boot the WASM + fetch keys only once per page load.
 let instanceCache: FhevmInstance | null = null;
 let initPromise: Promise<FhevmInstance> | null = null;
-
-// Manual Sepolia configuration (SepoliaConfigV2 export has missing fields)
-// These are the official Zama Sepolia endpoints
-const SEPOLIA_CONFIG = {
-  // Contract addresses on Sepolia
-  kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
-  aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",
-  inputVerifierContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
-  verifyingContractAddressDecryption: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
-  verifyingContractAddressInputVerification: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
-
-  // Relayer endpoints
-  relayerUrl: "https://gateway.sepolia.zama.ai",
-  gatewayUrl: "https://gateway.sepolia.zama.ai",
-
-  // Chain config
-  chainId: 11155111, // Sepolia
-  gatewayChainId: 11155111, // Same as chainId for Sepolia
-  relayerRouteVersion: 2 as const,
-};
+let sdkReady = false;
 
 /**
  * Gets or creates the FHEVM instance for browser encryption/decryption.
- * Boots WASM and fetches encryption keys from the relayer on first call.
- * Subsequent calls return the cached instance.
+ *
+ * Two distinct steps are required and used to be conflated:
+ *   1. initSDK()        — loads the TFHE + KMS WebAssembly modules. Skipping
+ *                          this is what produced the "__wbindgen_malloc" crash.
+ *   2. createInstance() — fetches the network public keys from the relayer.
+ *
+ * We use the SDK's official `SepoliaConfig` (correct ACL/KMS/InputVerifier
+ * addresses, relayer URL and gatewayChainId) instead of hand-written values.
  */
 export async function getFhevmInstance(): Promise<FhevmInstance> {
-  // Return cached instance if available
   if (instanceCache) return instanceCache;
-
-  // If initialization is in progress, wait for it
   if (initPromise) return initPromise;
 
-  // Start initialization
   initPromise = (async () => {
     try {
-      console.log("Initializing FHEVM instance...");
-      console.log("This may take 10-20 seconds to download WASM (~5MB)...");
-
-      // Give the page time to fully load
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Use MetaMask provider or fallback to public RPC
-      const network = window.ethereum || "https://ethereum-sepolia-rpc.publicnode.com";
-
-      const config = {
-        ...SEPOLIA_CONFIG,
-        network,
-        debug: true,
-      };
-
-      console.log("Config:", {
-        gatewayUrl: config.gatewayUrl,
-        network: window.ethereum ? "MetaMask" : "Public RPC",
-        chainId: config.chainId
-      });
-
-      // This boots the WASM module and fetches public keys from the gateway
-      const instance = await createInstance(config);
-      instanceCache = instance;
-      console.log("✅ FHEVM instance initialized successfully");
-      return instance;
-    } catch (error: any) {
-      console.error("❌ Failed to initialize FHEVM instance:", error);
-
-      // Show user-friendly error
-      const message = error?.message || String(error);
-      if (message.includes("__wbindgen_malloc")) {
-        console.error(
-          "\n🔧 WASM Loading Error - This is a known issue with the relayer SDK.\n" +
-          "Workaround: Use the CLI for encrypted operations:\n" +
-          "  npx hardhat cg:set-reserve --value 200 --network sepolia\n" +
-          "  npx hardhat cg:bid --value 100 --account 1 --network sepolia\n"
-        );
+      // 1. Boot the WebAssembly (single-threaded — no SharedArrayBuffer /
+      //    COOP-COEP headers needed). Idempotent, but we guard it anyway.
+      if (!sdkReady) {
+        console.log("[fhevm] loading WASM (initSDK)…");
+        await initSDK();
+        sdkReady = true;
       }
 
-      initPromise = null; // Reset so it can be retried
-      throw new Error(
-        "FHEVM initialization failed. " +
-        "This is a known browser WASM issue. " +
-        "Please use the Hardhat CLI for encrypted operations (see console for commands)."
-      );
+      // 2. Always read the FHEVM config from a dedicated Sepolia RPC — NOT the
+      //    wallet provider. The SDK queries the InputVerifier/KMS contracts for
+      //    their EIP-712 domains during createInstance; if the wallet happens to
+      //    be on the wrong chain (or is a wrapper like Hinkal that ignored the
+      //    switch request), those calls revert with "missing revert data".
+      //    Encryption only needs read access on Sepolia — the wallet is used
+      //    separately to actually send the bid/reserve transaction.
+      const config = { ...SepoliaConfig, network: SEPOLIA_RPC };
+
+      console.log("[fhevm] creating instance via relayer", {
+        relayerUrl: SepoliaConfig.relayerUrl,
+        network: SEPOLIA_RPC,
+      });
+
+      const instance = await createInstance(config);
+      instanceCache = instance;
+      console.log("[fhevm] instance ready ✅");
+      return instance;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[fhevm] initialization failed:", message);
+      // Reset so a later attempt (e.g. after switching network) can retry.
+      initPromise = null;
+      throw new Error(`FHEVM initialization failed: ${message}`);
     }
   })();
 

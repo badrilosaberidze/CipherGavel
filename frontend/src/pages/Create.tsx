@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { useWallet } from "../wallet";
-import { ABI, BYTECODE } from "../contract";
+import { ABI, BYTECODE, SEPOLIA_CHAIN_ID } from "../contract";
 
 export function Create() {
   const { account, provider, connect, busy: walletBusy } = useWallet();
@@ -36,6 +36,16 @@ export function Create() {
       }
       if (isNaN(max) || max <= 0 || max > 10) {
         throw new Error("Max bidders must be between 1 and 10");
+      }
+
+      const net = await provider.getNetwork();
+      if (net.chainId !== 11155111n) {
+        setStatus("Switching to Sepolia...");
+        try {
+          await provider.send("wallet_switchEthereumChain", [{ chainId: SEPOLIA_CHAIN_ID }]);
+        } catch {
+          throw new Error("Please switch your wallet to the Sepolia network and try again.");
+        }
       }
 
       setStatus("Deploying contract...");

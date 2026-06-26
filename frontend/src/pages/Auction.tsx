@@ -3,8 +3,21 @@ import { useParams, Link } from "react-router-dom";
 import { ethers } from "ethers";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWallet } from "../wallet";
-import { ABI, PHASES, PUBLIC_RPC } from "../contract";
+import { ABI, PHASES, PUBLIC_RPC, SEPOLIA_CHAIN_ID } from "../contract";
 import { getFhevmInstance } from "../fhevm";
+
+// Make sure the wallet is on Sepolia before sending a transaction. Without this,
+// a tx can be broadcast on the wrong chain (where the auction contract doesn't
+// exist), causing confusing "missing revert data" / CALL_EXCEPTION failures.
+async function ensureSepolia(provider: ethers.BrowserProvider) {
+  const net = await provider.getNetwork();
+  if (net.chainId === 11155111n) return;
+  try {
+    await provider.send("wallet_switchEthereumChain", [{ chainId: SEPOLIA_CHAIN_ID }]);
+  } catch {
+    throw new Error("Please switch your wallet to the Sepolia network and try again.");
+  }
+}
 
 interface AuctionState {
   seller: string;
@@ -105,13 +118,17 @@ export function Auction() {
       const bidWei = ethers.parseEther(bidValue);
       const instance = await getFhevmInstance();
 
+      // The relayer SDK requires EIP-55 checksummed addresses; MetaMask often
+      // hands back lowercase accounts (e.g. via eth_accounts), so normalize.
+      // Pass the bigint directly — Number(bidWei) loses precision above ~0.009 ETH.
       const encInput = instance
-        .createEncryptedInput(address, account)
-        .add64(Number(bidWei));
+        .createEncryptedInput(ethers.getAddress(address), ethers.getAddress(account))
+        .add64(bidWei);
 
       const encrypted = await encInput.encrypt();
 
       setTxStatus("Placing bid...");
+      await ensureSepolia(provider);
       const signer = await provider.getSigner();
       const auction = new ethers.Contract(address, ABI, signer);
 
@@ -133,15 +150,7 @@ export function Auction() {
 
     } catch (err: any) {
       console.error("Bid failed:", err);
-      const msg = err.message || "Bid transaction failed";
-      if (msg.includes("FHEVM") || msg.includes("WASM")) {
-        setError(
-          "Browser encryption failed (WASM issue). Use CLI instead:\n" +
-          `npx hardhat cg:bid --value ${bidValue} --account 1 --network sepolia`
-        );
-      } else {
-        setError(msg);
-      }
+      setError(err?.message || "Bid transaction failed");
       setTxStatus("");
     } finally {
       setTxBusy(false);
@@ -159,13 +168,17 @@ export function Auction() {
       const reserveWei = ethers.parseEther(reserveValue);
       const instance = await getFhevmInstance();
 
+      // The relayer SDK requires EIP-55 checksummed addresses; MetaMask often
+      // hands back lowercase accounts (e.g. via eth_accounts), so normalize.
+      // Pass the bigint directly — Number(reserveWei) loses precision above ~0.009 ETH.
       const encInput = instance
-        .createEncryptedInput(address, account)
-        .add64(Number(reserveWei));
+        .createEncryptedInput(ethers.getAddress(address), ethers.getAddress(account))
+        .add64(reserveWei);
 
       const encrypted = await encInput.encrypt();
 
       setTxStatus("Setting reserve...");
+      await ensureSepolia(provider);
       const signer = await provider.getSigner();
       const auction = new ethers.Contract(address, ABI, signer);
 
@@ -186,15 +199,7 @@ export function Auction() {
 
     } catch (err: any) {
       console.error("Set reserve failed:", err);
-      const msg = err.message || "Reserve transaction failed";
-      if (msg.includes("FHEVM") || msg.includes("WASM")) {
-        setError(
-          "Browser encryption failed (WASM issue). Use CLI instead:\n" +
-          `npx hardhat cg:set-reserve --value ${reserveValue} --network sepolia`
-        );
-      } else {
-        setError(msg);
-      }
+      setError(err?.message || "Reserve transaction failed");
       setTxStatus("");
     } finally {
       setTxBusy(false);
@@ -209,6 +214,7 @@ export function Auction() {
     setError(null);
 
     try {
+      await ensureSepolia(provider);
       const signer = await provider.getSigner();
       const auction = new ethers.Contract(address, ABI, signer);
 
@@ -253,6 +259,7 @@ export function Auction() {
       const decrypted: any = await (instance as any).publicDecrypt(handles);
 
       setTxStatus("Finalizing...");
+      await ensureSepolia(provider);
       const signer = await provider.getSigner();
       const auctionWrite = new ethers.Contract(address, ABI, signer);
 
@@ -272,15 +279,7 @@ export function Auction() {
 
     } catch (err: any) {
       console.error("Finalize failed:", err);
-      const msg = err.message || "Finalize transaction failed";
-      if (msg.includes("FHEVM") || msg.includes("WASM")) {
-        setError(
-          "Browser decryption failed (WASM issue). Use CLI instead:\n" +
-          "npx hardhat cg:finalize --network sepolia"
-        );
-      } else {
-        setError(msg);
-      }
+      setError(err?.message || "Finalize transaction failed");
       setTxStatus("");
     } finally {
       setTxBusy(false);
@@ -295,6 +294,7 @@ export function Auction() {
     setError(null);
 
     try {
+      await ensureSepolia(provider);
       const signer = await provider.getSigner();
       const auction = new ethers.Contract(address, ABI, signer);
 
