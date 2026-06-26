@@ -83,32 +83,56 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setManuallyDisconnected(true); // Mark as manually disconnected
   }
 
-  // Instant reconnect: if MetaMask is already authorized, pick it up on load.
-  // But skip if user manually disconnected.
+  // Setup MetaMask event listeners and auto-reconnect
   useEffect(() => {
-    if (manuallyDisconnected) return; // Don't auto-reconnect after manual disconnect
-
     const injected = pickMetaMask();
     if (!injected) return;
-    const bp = new ethers.BrowserProvider(injected);
-    bp.send("eth_accounts", [])
-      .then((accs: string[]) => {
+
+    // Auto-reconnect on page load (unless manually disconnected)
+    if (!manuallyDisconnected) {
+      const bp = new ethers.BrowserProvider(injected);
+      bp.send("eth_accounts", [])
+        .then((accs: string[]) => {
+          if (accs?.length) {
+            setProvider(bp);
+            setAccount(accs[0]);
+          }
+        })
+        .catch(() => {});
+    }
+
+    // Setup event listeners (always, regardless of disconnect state)
+    if (injected.on) {
+      const handleAccountsChanged = (accs: string[]) => {
+        console.log("MetaMask accounts changed:", accs);
         if (accs?.length) {
+          // User switched account in MetaMask
+          const bp = new ethers.BrowserProvider(injected);
           setProvider(bp);
           setAccount(accs[0]);
-        }
-      })
-      .catch(() => {});
-    if (injected.on) {
-      injected.on("accountsChanged", (accs: string[]) => {
-        if (accs?.length) {
-          setAccount(accs[0]);
-          setManuallyDisconnected(false); // User switched account in MetaMask, allow auto-reconnect
+          setManuallyDisconnected(false); // Allow auto-reconnect again
         } else {
+          // User disconnected in MetaMask
           setAccount(null);
+          setProvider(null);
         }
-      });
-      injected.on("chainChanged", () => window.location.reload());
+      };
+
+      const handleChainChanged = () => {
+        console.log("Chain changed, reloading...");
+        window.location.reload();
+      };
+
+      injected.on("accountsChanged", handleAccountsChanged);
+      injected.on("chainChanged", handleChainChanged);
+
+      // Cleanup listeners on unmount
+      return () => {
+        if (injected.removeListener) {
+          injected.removeListener("accountsChanged", handleAccountsChanged);
+          injected.removeListener("chainChanged", handleChainChanged);
+        }
+      };
     }
   }, [manuallyDisconnected]);
 
