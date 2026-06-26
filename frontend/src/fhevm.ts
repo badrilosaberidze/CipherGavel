@@ -23,25 +23,47 @@ export async function getFhevmInstance(): Promise<FhevmInstance> {
   initPromise = (async () => {
     try {
       console.log("Initializing FHEVM instance...");
+      console.log("This may take 10-20 seconds to download WASM (~5MB)...");
+
+      // Give the page time to fully load
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // SepoliaConfigV2 needs a network provider
       const config = {
         ...SepoliaConfigV2,
         network: window.ethereum || "https://ethereum-sepolia-rpc.publicnode.com",
+        debug: true, // Enable debug logs
       };
+
+      console.log("Config:", {
+        gatewayUrl: (SepoliaConfigV2 as any).gatewayUrl,
+        network: config.network ? "MetaMask" : "Public RPC"
+      });
 
       // This boots the WASM module and fetches public keys from the gateway
       const instance = await createInstance(config);
       instanceCache = instance;
-      console.log("FHEVM instance initialized successfully");
+      console.log("✅ FHEVM instance initialized successfully");
       return instance;
-    } catch (error) {
-      console.error("Failed to initialize FHEVM instance:", error);
+    } catch (error: any) {
+      console.error("❌ Failed to initialize FHEVM instance:", error);
+
+      // Show user-friendly error
+      const message = error?.message || String(error);
+      if (message.includes("__wbindgen_malloc")) {
+        console.error(
+          "\n🔧 WASM Loading Error - This is a known issue with the relayer SDK.\n" +
+          "Workaround: Use the CLI for encrypted operations:\n" +
+          "  npx hardhat cg:set-reserve --value 200 --network sepolia\n" +
+          "  npx hardhat cg:bid --value 100 --account 1 --network sepolia\n"
+        );
+      }
+
       initPromise = null; // Reset so it can be retried
       throw new Error(
-        "FHEVM initialization failed. Check console for details. " +
-        "Common issues: WASM not loaded, wrong relayer URL, or network error. " +
-        "Try refreshing the page (Ctrl+Shift+R)."
+        "FHEVM initialization failed. " +
+        "This is a known browser WASM issue. " +
+        "Please use the Hardhat CLI for encrypted operations (see console for commands)."
       );
     }
   })();

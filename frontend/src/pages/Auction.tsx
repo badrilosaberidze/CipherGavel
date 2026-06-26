@@ -133,7 +133,15 @@ export function Auction() {
 
     } catch (err: any) {
       console.error("Bid failed:", err);
-      setError(err.message || "Bid transaction failed");
+      const msg = err.message || "Bid transaction failed";
+      if (msg.includes("FHEVM") || msg.includes("WASM")) {
+        setError(
+          "Browser encryption failed (WASM issue). Use CLI instead:\n" +
+          `npx hardhat cg:bid --value ${bidValue} --account 1 --network sepolia`
+        );
+      } else {
+        setError(msg);
+      }
       setTxStatus("");
     } finally {
       setTxBusy(false);
@@ -178,7 +186,15 @@ export function Auction() {
 
     } catch (err: any) {
       console.error("Set reserve failed:", err);
-      setError(err.message || "Reserve transaction failed");
+      const msg = err.message || "Reserve transaction failed";
+      if (msg.includes("FHEVM") || msg.includes("WASM")) {
+        setError(
+          "Browser encryption failed (WASM issue). Use CLI instead:\n" +
+          `npx hardhat cg:set-reserve --value ${reserveValue} --network sepolia`
+        );
+      } else {
+        setError(msg);
+      }
       setTxStatus("");
     } finally {
       setTxBusy(false);
@@ -256,7 +272,15 @@ export function Auction() {
 
     } catch (err: any) {
       console.error("Finalize failed:", err);
-      setError(err.message || "Finalize transaction failed");
+      const msg = err.message || "Finalize transaction failed";
+      if (msg.includes("FHEVM") || msg.includes("WASM")) {
+        setError(
+          "Browser decryption failed (WASM issue). Use CLI instead:\n" +
+          "npx hardhat cg:finalize --network sepolia"
+        );
+      } else {
+        setError(msg);
+      }
       setTxStatus("");
     } finally {
       setTxBusy(false);
@@ -382,7 +406,13 @@ export function Auction() {
             )}
 
             {error && (
-              <p style={{ color: "var(--wax)", fontSize: "0.85rem", marginTop: "1rem" }}>
+              <p style={{
+                color: "var(--wax)",
+                fontSize: "0.85rem",
+                marginTop: "1rem",
+                whiteSpace: "pre-wrap",
+                fontFamily: error.includes("CLI") ? "var(--mono)" : "inherit"
+              }}>
                 {error}
               </p>
             )}
