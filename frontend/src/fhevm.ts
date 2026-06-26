@@ -1,16 +1,34 @@
-import { createInstance, SepoliaConfigV2 } from "@zama-fhe/relayer-sdk/web";
+import { createInstance } from "@zama-fhe/relayer-sdk/web";
 import type { FhevmInstance } from "@zama-fhe/relayer-sdk/web";
 
 // Singleton instance cache to avoid re-initializing WASM
 let instanceCache: FhevmInstance | null = null;
 let initPromise: Promise<FhevmInstance> | null = null;
 
+// Manual Sepolia configuration (SepoliaConfigV2 export has missing fields)
+// These are the official Zama Sepolia endpoints
+const SEPOLIA_CONFIG = {
+  // Contract addresses on Sepolia
+  kmsContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
+  aclContractAddress: "0xFee8407e2f5e3Ee68ad77cAE98c434e637f516e5",
+  inputVerifierContractAddress: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
+  verifyingContractAddressDecryption: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
+  verifyingContractAddressInputVerification: "0x9D6891A6240D6130c54ae243d8005063D05fE14b",
+
+  // Relayer endpoints
+  relayerUrl: "https://gateway.sepolia.zama.ai",
+  gatewayUrl: "https://gateway.sepolia.zama.ai",
+
+  // Chain config
+  chainId: 11155111, // Sepolia
+  gatewayChainId: 11155111, // Same as chainId for Sepolia
+  relayerRouteVersion: 2 as const,
+};
+
 /**
  * Gets or creates the FHEVM instance for browser encryption/decryption.
  * Boots WASM and fetches encryption keys from the relayer on first call.
  * Subsequent calls return the cached instance.
- *
- * Uses SepoliaConfigV2 (newer relayer infrastructure).
  */
 export async function getFhevmInstance(): Promise<FhevmInstance> {
   // Return cached instance if available
@@ -28,16 +46,19 @@ export async function getFhevmInstance(): Promise<FhevmInstance> {
       // Give the page time to fully load
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // SepoliaConfigV2 needs a network provider
+      // Use MetaMask provider or fallback to public RPC
+      const network = window.ethereum || "https://ethereum-sepolia-rpc.publicnode.com";
+
       const config = {
-        ...SepoliaConfigV2,
-        network: window.ethereum || "https://ethereum-sepolia-rpc.publicnode.com",
-        debug: true, // Enable debug logs
+        ...SEPOLIA_CONFIG,
+        network,
+        debug: true,
       };
 
       console.log("Config:", {
-        gatewayUrl: (SepoliaConfigV2 as any).gatewayUrl,
-        network: config.network ? "MetaMask" : "Public RPC"
+        gatewayUrl: config.gatewayUrl,
+        network: window.ethereum ? "MetaMask" : "Public RPC",
+        chainId: config.chainId
       });
 
       // This boots the WASM module and fetches public keys from the gateway
