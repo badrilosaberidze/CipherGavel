@@ -46,10 +46,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manuallyDisconnected, setManuallyDisconnected] = useState(false);
 
   async function connect() {
     setBusy(true);
     setError(null);
+    setManuallyDisconnected(false); // Reset the flag when manually connecting
     try {
       const injected = pickMetaMask();
       if (!injected) {
@@ -57,6 +59,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return;
       }
       const bp = new ethers.BrowserProvider(injected);
+      // Request accounts - this opens MetaMask account selector
       await bp.send("eth_requestAccounts", []);
       try {
         await bp.send("wallet_switchEthereumChain", [{ chainId: SEPOLIA_CHAIN_ID }]);
@@ -77,10 +80,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAccount(null);
     setProvider(null);
     setError(null);
+    setManuallyDisconnected(true); // Mark as manually disconnected
   }
 
   // Instant reconnect: if MetaMask is already authorized, pick it up on load.
+  // But skip if user manually disconnected.
   useEffect(() => {
+    if (manuallyDisconnected) return; // Don't auto-reconnect after manual disconnect
+
     const injected = pickMetaMask();
     if (!injected) return;
     const bp = new ethers.BrowserProvider(injected);
@@ -93,10 +100,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {});
     if (injected.on) {
-      injected.on("accountsChanged", (accs: string[]) => setAccount(accs?.[0] ?? null));
+      injected.on("accountsChanged", (accs: string[]) => {
+        if (accs?.length) {
+          setAccount(accs[0]);
+          setManuallyDisconnected(false); // User switched account in MetaMask, allow auto-reconnect
+        } else {
+          setAccount(null);
+        }
+      });
       injected.on("chainChanged", () => window.location.reload());
     }
-  }, []);
+  }, [manuallyDisconnected]);
 
   return (
     <Ctx.Provider value={{ account, provider, connect, disconnect, busy, error }}>{children}</Ctx.Provider>
