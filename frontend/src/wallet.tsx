@@ -43,7 +43,7 @@ async function pickMetaMask(): Promise<any | null> {
   // Wait a bit for EIP-6963 announcements to arrive
   await new Promise(resolve => setTimeout(resolve, 100));
 
-  console.log("Available providers:", announced.map(a => `${a.rdns} (${a.name})`));
+  console.log("Available EIP-6963 providers:", announced.map(a => `${a.rdns} (${a.name})`));
 
   // First priority: EIP-6963 announced MetaMask with exact RDNS
   const mmExact = announced.find((a) => a.rdns === "io.metamask");
@@ -61,21 +61,58 @@ async function pickMetaMask(): Promise<any | null> {
 
   // Third priority: window.ethereum with providers array
   const eth: any = (window as any).ethereum;
+  console.log("window.ethereum exists:", !!eth);
+  console.log("window.ethereum.providers:", eth?.providers?.map((p: any) => ({
+    isMetaMask: p.isMetaMask,
+    isHinkal: p.isHinkal,
+    isPhantom: p.isPhantom
+  })));
+
   if (eth?.providers?.length) {
-    const found = eth.providers.find((p: any) => p.isMetaMask && !p.isHinkal);
+    const found = eth.providers.find((p: any) => p.isMetaMask && !p.isHinkal && !p.isPhantom);
     if (found) {
-      console.log("Found MetaMask via window.ethereum.providers");
+      console.log("Found MetaMask via window.ethereum.providers array");
       return found;
     }
   }
 
-  // Fourth priority: window.ethereum is MetaMask itself (not Hinkal or others)
-  if (eth?.isMetaMask && !eth?.isHinkal) {
-    console.log("Found MetaMask via window.ethereum");
+  // Fourth priority: Check if Hinkal is wrapping MetaMask
+  console.log("window.ethereum.isMetaMask:", eth?.isMetaMask);
+  console.log("window.ethereum.isHinkal:", eth?.isHinkal);
+
+  // If Hinkal is wrapping MetaMask, look for the underlying provider
+  if (eth?.isHinkal && eth?.isMetaMask) {
+    console.log("Hinkal detected, looking for underlying MetaMask provider...");
+
+    // Check common properties where wrapped providers are stored
+    const possibleProviders = [
+      eth._metamask?.provider,
+      eth._provider,
+      eth.provider,
+      eth.metamask,
+      (window as any).ethereum._metamask
+    ];
+
+    for (const candidate of possibleProviders) {
+      if (candidate && candidate.isMetaMask && !candidate.isHinkal) {
+        console.log("Found unwrapped MetaMask provider!");
+        return candidate;
+      }
+    }
+
+    // If we can't find unwrapped MetaMask, use Hinkal's wrapped version
+    // It should still work for basic operations
+    console.log("Using Hinkal-wrapped MetaMask (may work for basic operations)");
     return eth;
   }
 
-  console.error("MetaMask not found. Available providers:", announced);
+  // Fifth priority: window.ethereum is MetaMask itself (not wrapped)
+  if (eth?.isMetaMask && !eth?.isHinkal && !eth?.isPhantom) {
+    console.log("Found MetaMask directly via window.ethereum");
+    return eth;
+  }
+
+  console.error("MetaMask not found. Please disable other wallet extensions or set MetaMask as default.");
   return null;
 }
 
