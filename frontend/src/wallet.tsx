@@ -7,6 +7,7 @@ interface WalletCtx {
   account: string | null;
   provider: ethers.BrowserProvider | null;
   connect: () => Promise<void>;
+  disconnect: () => void;
   busy: boolean;
   error: string | null;
 }
@@ -72,6 +73,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  function disconnect() {
+    setAccount(null);
+    setProvider(null);
+    setError(null);
+  }
+
   // Instant reconnect: if MetaMask is already authorized, pick it up on load.
   useEffect(() => {
     const injected = pickMetaMask();
@@ -92,6 +99,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ account, provider, connect, busy, error }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ account, provider, connect, disconnect, busy, error }}>{children}</Ctx.Provider>
   );
 }

@@ -18,7 +18,16 @@ export default function App() {
         <div className="topbar-right">
           <span className="pill"><span className="dot" /> Sepolia</span>
           {wallet.account ? (
-            <span className="pill mono">{wallet.account.slice(0, 6)}…{wallet.account.slice(-4)}</span>
+            <>
+              <span className="pill mono">{wallet.account.slice(0, 6)}…{wallet.account.slice(-4)}</span>
+              <button
+                className="btn btn-ghost"
+                onClick={wallet.disconnect}
+                style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+              >
+                Disconnect
+              </button>
+            </>
           ) : (
             <button className="btn btn-ghost" onClick={wallet.connect} disabled={wallet.busy}>
               {wallet.busy ? "Connecting…" : "Connect MetaMask"}
