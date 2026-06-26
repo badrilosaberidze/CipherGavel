@@ -19,26 +19,64 @@ export const useWallet = () => useContext(Ctx);
 // Modern wallets announce themselves via EIP-6963; we collect those so we can
 // target MetaMask rather than whatever extension grabbed window.ethereum.
 const announced: { rdns: string; name: string; provider: any }[] = [];
-if (typeof window !== "undefined") {
+
+function setupEIP6963Listener() {
+  if (typeof window === "undefined") return;
+
   window.addEventListener("eip6963:announceProvider", (e: any) => {
     const d = e.detail;
     if (d?.info && d?.provider && !announced.find((a) => a.rdns === d.info.rdns)) {
+      console.log("EIP-6963 provider announced:", d.info.rdns, d.info.name);
       announced.push({ rdns: d.info.rdns, name: d.info.name, provider: d.provider });
     }
   });
+
   window.dispatchEvent(new Event("eip6963:requestProvider"));
 }
 
-function pickMetaMask(): any | null {
-  const mm = announced.find((a) => a.rdns === "io.metamask" || /metamask/i.test(a.name));
-  if (mm) return mm.provider;
+// Setup listener on module load
+if (typeof window !== "undefined") {
+  setupEIP6963Listener();
+}
+
+async function pickMetaMask(): Promise<any | null> {
+  // Wait a bit for EIP-6963 announcements to arrive
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  console.log("Available providers:", announced.map(a => `${a.rdns} (${a.name})`));
+
+  // First priority: EIP-6963 announced MetaMask with exact RDNS
+  const mmExact = announced.find((a) => a.rdns === "io.metamask");
+  if (mmExact) {
+    console.log("Found MetaMask via EIP-6963 (exact match)");
+    return mmExact.provider;
+  }
+
+  // Second priority: EIP-6963 announced provider with "metamask" in name
+  const mmFuzzy = announced.find((a) => /metamask/i.test(a.name));
+  if (mmFuzzy) {
+    console.log("Found MetaMask via EIP-6963 (fuzzy match)");
+    return mmFuzzy.provider;
+  }
+
+  // Third priority: window.ethereum with providers array
   const eth: any = (window as any).ethereum;
   if (eth?.providers?.length) {
-    const found = eth.providers.find((p: any) => p.isMetaMask);
-    if (found) return found;
+    const found = eth.providers.find((p: any) => p.isMetaMask && !p.isHinkal);
+    if (found) {
+      console.log("Found MetaMask via window.ethereum.providers");
+      return found;
+    }
   }
-  if (eth?.isMetaMask) return eth;
-  return eth ?? null;
+
+  // Fourth priority: window.ethereum is MetaMask itself (not Hinkal or others)
+  if (eth?.isMetaMask && !eth?.isHinkal) {
+    console.log("Found MetaMask via window.ethereum");
+    return eth;
+  }
+
+  console.error("MetaMask not found. Available providers:", announced);
+  return null;
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
@@ -53,7 +91,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setError(null);
     setManuallyDisconnected(false); // Reset the flag when manually connecting
     try {
-      const injected = pickMetaMask();
+      const injected = await pickMetaMask();
       if (!injected) {
         setError("MetaMask not found — install it, or set it as your default wallet.");
         return;
@@ -85,55 +123,63 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   // Setup MetaMask event listeners and auto-reconnect
   useEffect(() => {
-    const injected = pickMetaMask();
-    if (!injected) return;
+    let cleanup: (() => void) | undefined;
 
-    // Auto-reconnect on page load (unless manually disconnected)
-    if (!manuallyDisconnected) {
-      const bp = new ethers.BrowserProvider(injected);
-      bp.send("eth_accounts", [])
-        .then((accs: string[]) => {
+    pickMetaMask().then((injected) => {
+      if (!injected) return;
+
+      // Auto-reconnect on page load (unless manually disconnected)
+      if (!manuallyDisconnected) {
+        const bp = new ethers.BrowserProvider(injected);
+        bp.send("eth_accounts", [])
+          .then((accs: string[]) => {
+            if (accs?.length) {
+              setProvider(bp);
+              setAccount(accs[0]);
+            }
+          })
+          .catch(() => {});
+      }
+
+      // Setup event listeners (always, regardless of disconnect state)
+      if (injected.on) {
+        const handleAccountsChanged = (accs: string[]) => {
+          console.log("MetaMask accounts changed:", accs);
           if (accs?.length) {
+            // User switched account in MetaMask
+            const bp = new ethers.BrowserProvider(injected);
             setProvider(bp);
             setAccount(accs[0]);
+            setManuallyDisconnected(false); // Allow auto-reconnect again
+          } else {
+            // User disconnected in MetaMask
+            setAccount(null);
+            setProvider(null);
           }
-        })
-        .catch(() => {});
-    }
+        };
 
-    // Setup event listeners (always, regardless of disconnect state)
-    if (injected.on) {
-      const handleAccountsChanged = (accs: string[]) => {
-        console.log("MetaMask accounts changed:", accs);
-        if (accs?.length) {
-          // User switched account in MetaMask
-          const bp = new ethers.BrowserProvider(injected);
-          setProvider(bp);
-          setAccount(accs[0]);
-          setManuallyDisconnected(false); // Allow auto-reconnect again
-        } else {
-          // User disconnected in MetaMask
-          setAccount(null);
-          setProvider(null);
-        }
-      };
+        const handleChainChanged = () => {
+          console.log("Chain changed, reloading...");
+          window.location.reload();
+        };
 
-      const handleChainChanged = () => {
-        console.log("Chain changed, reloading...");
-        window.location.reload();
-      };
+        injected.on("accountsChanged", handleAccountsChanged);
+        injected.on("chainChanged", handleChainChanged);
 
-      injected.on("accountsChanged", handleAccountsChanged);
-      injected.on("chainChanged", handleChainChanged);
+        // Setup cleanup function
+        cleanup = () => {
+          if (injected.removeListener) {
+            injected.removeListener("accountsChanged", handleAccountsChanged);
+            injected.removeListener("chainChanged", handleChainChanged);
+          }
+        };
+      }
+    });
 
-      // Cleanup listeners on unmount
-      return () => {
-        if (injected.removeListener) {
-          injected.removeListener("accountsChanged", handleAccountsChanged);
-          injected.removeListener("chainChanged", handleChainChanged);
-        }
-      };
-    }
+    // Cleanup listeners on unmount
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, [manuallyDisconnected]);
 
   return (
