@@ -10,9 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/react-router-dom": "^5.3.3",
+    "@zama-fhe/relayer-sdk": "^0.4.4",
+    "ethers": "^6.17.0",
     "framer-motion": "^12.42.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

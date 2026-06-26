@@ -97,9 +97,17 @@ body::after {
 
 /* ---------- top bar ---------- */
 .topbar {
-  position: relative; z-index: 5;
+  position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; justify-content: space-between;
-  padding: var(--s3) 0;
+  padding: var(--s2) 0;
+}
+.topbar::after {
+  content: "";
+  position: absolute; top: 0; bottom: 0; left: 50%;
+  width: 100vw; transform: translateX(-50%); z-index: -1;
+  background: rgba(13, 10, 18, 0.82);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+  backdrop-filter: saturate(140%) blur(12px);
   border-bottom: 1px solid var(--hairline);
 }
 .brand { display: flex; align-items: center; gap: 0.7rem; }
@@ -170,7 +178,7 @@ body::after {
 .console {
   background: linear-gradient(180deg, var(--ink-2), #110c1a);
   border: 1px solid var(--hairline); border-radius: var(--radius);
-  padding: var(--s3); position: sticky; top: var(--s3);
+  padding: var(--s3); position: sticky;  top: 90px;
 }
 .console-row { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 0; border-bottom: 1px solid var(--hairline); }
 .console-row:last-of-type { border-bottom: none; }
